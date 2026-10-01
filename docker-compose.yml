@@ -1,0 +1,98 @@
+services:
+  # ─────────────────────────────────────────────
+  # Database — PostgreSQL 16 + pgvector extension
+  # ─────────────────────────────────────────────
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: opspilot_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-opspilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opspilot_dev_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-opspilot}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opspilot} -d ${POSTGRES_DB:-opspilot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ─────────────────────────────────────────────
+  # Cache / Message broker — Redis 7
+  # ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: opspilot_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # Backend — FastAPI / Python
+  # ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: opspilot_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-opspilot}:${POSTGRES_PASSWORD:-opspilot_dev_secret}@db:5432/${POSTGRES_DB:-opspilot}
+      SYNC_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-opspilot}:${POSTGRES_PASSWORD:-opspilot_dev_secret}@db:5432/${POSTGRES_DB:-opspilot}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-CHANGE_THIS_IN_PRODUCTION_USE_64_RANDOM_CHARS}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:5173"]'
+    volumes:
+      - ./backend:/app
+      - /app/__pycache__
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --log-level info
+
+  # ─────────────────────────────────────────────
+  # Frontend — React / Vite / TypeScript
+  # ─────────────────────────────────────────────
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    container_name: opspilot_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_BACKEND_URL: http://backend:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  default:
+    name: opspilot_network

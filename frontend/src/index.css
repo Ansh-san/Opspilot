@@ -1,0 +1,114 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── CSS custom properties (design tokens) ──────────────────────────────── */
+:root {
+  --color-bg: #080C18;
+  --color-surface: #0F1729;
+  --color-elevated: #162035;
+  --color-border: #1E2D4A;
+  --color-primary: #6366F1;
+  --color-primary-hover: #818CF8;
+  --color-text: #F1F5F9;
+  --color-text-secondary: #94A3B8;
+  --color-text-muted: #64748B;
+}
+
+/* ─── Base resets ─────────────────────────────────────────────────────────── */
+@layer base {
+  * {
+    @apply border-base-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-base text-slate-100 font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-base;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-base-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-base-divider;
+  }
+}
+
+/* ─── Component layer ─────────────────────────────────────────────────────── */
+@layer components {
+  /* Glass card */
+  .glass-card {
+    @apply bg-base-surface border border-base-border rounded-xl backdrop-blur-sm;
+    background: linear-gradient(135deg, rgba(15, 23, 41, 0.9) 0%, rgba(22, 32, 53, 0.6) 100%);
+  }
+
+  /* Glow border on focus */
+  .glow-focus {
+    @apply focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-base;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-primary-400 to-secondary-400 bg-clip-text text-transparent;
+  }
+
+  /* Status dots */
+  .status-dot {
+    @apply w-2 h-2 rounded-full inline-block;
+  }
+
+  /* Sidebar item */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium
+           text-slate-400 hover:text-slate-100 hover:bg-base-elevated
+           transition-all duration-150 cursor-pointer;
+  }
+
+  .nav-item-active {
+    @apply text-slate-100 bg-primary-500/10 border border-primary-500/20;
+    color: theme('colors.primary.400');
+  }
+}
+
+/* ─── Utility layer ───────────────────────────────────────────────────────── */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .animate-in {
+    @apply animate-fade-in;
+  }
+
+  /* Gradient border trick */
+  .gradient-border {
+    position: relative;
+    border-radius: 0.75rem;
+  }
+
+  .gradient-border::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+    z-index: -1;
+  }
+}

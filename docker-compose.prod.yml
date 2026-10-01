@@ -1,0 +1,95 @@
+services:
+  # ─────────────────────────────────────────────
+  # Database — PostgreSQL 16 + pgvector extension
+  # ─────────────────────────────────────────────
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: opspilot_db_prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-opspilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opspilot_prod_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-opspilot}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+    # Removed exposed ports for security
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opspilot} -d ${POSTGRES_DB:-opspilot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # ─────────────────────────────────────────────
+  # Cache / Message broker — Redis 7
+  # ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: opspilot_redis_prod
+    restart: unless-stopped
+    # Removed exposed ports for security
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # Backend — FastAPI / Python (Gunicorn)
+  # ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: opspilot_backend_prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-opspilot}:${POSTGRES_PASSWORD:-opspilot_prod_secret}@db:5432/${POSTGRES_DB:-opspilot}
+      SYNC_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-opspilot}:${POSTGRES_PASSWORD:-opspilot_prod_secret}@db:5432/${POSTGRES_DB:-opspilot}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-MUST_BE_CHANGED_IN_PRODUCTION_ENV}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ENVIRONMENT: production
+      CORS_ORIGINS: '["http://localhost","https://opspilot.example.com"]'
+    # No volume mount for code to ensure we run the baked image
+    volumes:
+      - opspilot_uploads:/app/data/uploads
+    # Exposing backend port might be optional if frontend Nginx proxies it, but for now we expose it
+    ports:
+      - "8000:8000"
+
+  # ─────────────────────────────────────────────
+  # Frontend — React / Vite / TypeScript (Nginx)
+  # ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: opspilot_frontend_prod
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:8000}
+    ports:
+      - "80:80"
+
+volumes:
+  pgdata_prod:
+    driver: local
+  opspilot_uploads:
+    driver: local
+
+networks:
+  default:
+    name: opspilot_prod_network
