@@ -7,9 +7,9 @@ import axios, { type AxiosError } from 'axios'
 import { useAuthStore } from '@/stores/authStore'
 
 export const apiClient = axios.create({
-  // Use relative URL so requests go through the Vite dev proxy (/api → backend).
-  // This avoids CORS entirely — the browser only talks to localhost:3000.
-  baseURL: '',
+  // VITE_API_URL is the source of truth (e.g. the Render backend URL in production).
+  // Falls back to the local backend for development.
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
   headers: {
     'Content-Type': 'application/json',
   },
