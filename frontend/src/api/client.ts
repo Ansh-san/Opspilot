@@ -41,12 +41,44 @@ apiClient.interceptors.response.use(
   }
 )
 
-/** Extract a user-friendly error message from an Axios error. */
-export function getErrorMessage(err: unknown): string {
+/** Shape of a single FastAPI / Pydantic validation error (422). */
+interface FastAPIValidationError {
+  loc?: (string | number)[]
+  msg?: string
+  type?: string
+}
+
+/**
+ * Extract a user-friendly error message from an Axios error.
+ *
+ * Always returns a plain string — never an object/array — so it is safe to
+ * render directly in React. FastAPI returns `detail` in two shapes:
+ *   - string:  {"detail": "Incorrect email or password."}         (HTTPException)
+ *   - array:   {"detail": [{"loc": [...], "msg": "...", ...}]}    (422 validation)
+ */
+export function getErrorMessage(err: unknown, fallback = 'An unexpected error occurred.'): string {
   if (axios.isAxiosError(err)) {
-    const data = err.response?.data as { detail?: string } | undefined
-    return data?.detail ?? err.message ?? 'An unexpected error occurred.'
+    const detail = (err.response?.data as { detail?: unknown } | undefined)?.detail
+
+    if (typeof detail === 'string' && detail.trim()) return detail
+
+    if (Array.isArray(detail) && detail.length > 0) {
+      const first = detail[0] as FastAPIValidationError
+      if (first && typeof first.msg === 'string') {
+        // Pydantic v2 prefixes custom validator messages with "Value error, "
+        const msg = first.msg.replace(/^Value error,\s*/i, '')
+        const field = Array.isArray(first.loc)
+          ? first.loc.filter((p) => p !== 'body').join('.')
+          : ''
+        return field ? `${field}: ${msg}` : msg
+      }
+      return fallback
+    }
+
+    if (err.code === 'ECONNABORTED') return 'Request timed out. The server may be waking up — please try again.'
+    if (!err.response) return 'Unable to reach the server. Please check your connection.'
+    return err.message || fallback
   }
   if (err instanceof Error) return err.message
-  return 'An unexpected error occurred.'
+  return fallback
 }

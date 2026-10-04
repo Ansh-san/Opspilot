@@ -44,10 +44,17 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null })
         try {
           // Register creates the user + org — then auto-login
-          await authApi.register(data)
-          await get().login({ email: data.email, password: data.password })
+          const payload = {
+            ...data,
+            org_name: data.org_name.trim(),
+            org_slug: data.org_slug.trim().replace(/^-+|-+$/g, ''),
+            full_name: data.full_name.trim(),
+            email: data.email.trim().toLowerCase(),
+          }
+          await authApi.register(payload)
+          await get().login({ email: payload.email, password: payload.password })
         } catch (err) {
-          set({ error: getErrorMessage(err), isLoading: false })
+          set({ error: getErrorMessage(err, 'Registration failed. Please check your details.'), isLoading: false })
           throw err
         }
       },
@@ -55,7 +62,10 @@ export const useAuthStore = create<AuthState>()(
       login: async (data) => {
         set({ isLoading: true, error: null })
         try {
-          const { data: tokens } = await authApi.login(data)
+          const { data: tokens } = await authApi.login({
+            email: data.email.trim().toLowerCase(),
+            password: data.password,
+          })
           set({
             accessToken: tokens.access_token,
             refreshToken: tokens.refresh_token,
@@ -64,7 +74,7 @@ export const useAuthStore = create<AuthState>()(
           await get().loadUser()
           set({ isAuthenticated: true, isLoading: false })
         } catch (err) {
-          set({ error: getErrorMessage(err), isLoading: false })
+          set({ error: getErrorMessage(err, 'Invalid credentials'), isLoading: false })
           throw err
         }
       },

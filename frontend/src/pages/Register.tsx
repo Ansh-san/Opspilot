@@ -39,6 +39,29 @@ export default function Register() {
       return
     }
 
+    // Mirror backend RegisterRequest validation (backend/app/schemas/auth.py)
+    const slug = form.org_slug.trim().replace(/^-+|-+$/g, '')
+    if (form.org_name.trim().length < 2) {
+      setValidationError('Organization name must be at least 2 characters.')
+      return
+    }
+    if (slug.length < 2 || !/^[a-z0-9-]+$/.test(slug)) {
+      setValidationError('Workspace slug must be at least 2 characters: lowercase letters, numbers, and hyphens only.')
+      return
+    }
+    if (form.full_name.trim().length < 2) {
+      setValidationError('Full name must be at least 2 characters.')
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setValidationError('Please enter a valid email address.')
+      return
+    }
+    if (form.password.length < 8 || !/[A-Z]/.test(form.password) || !/\d/.test(form.password)) {
+      setValidationError('Password must be at least 8 characters and include an uppercase letter and a digit.')
+      return
+    }
+
     try {
       await register({
         org_name: form.org_name,
