@@ -13,7 +13,7 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30_000,
+  timeout: 60000, // 60s — accommodates Render free-tier cold starts
 })
 
 // ─── Request interceptor — attach Bearer token ────────────────────────────────
