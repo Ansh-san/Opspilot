@@ -48,17 +48,11 @@ app = FastAPI(
 
 
 # ─── Middleware ───────────────────────────────────────────────────────────────
-# In development, always allow localhost origins regardless of env var parsing.
-_cors_origins = list(settings.CORS_ORIGINS)
-if settings.ENVIRONMENT != "production":
-    _dev_origins = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"]
-    for origin in _dev_origins:
-        if origin not in _cors_origins:
-            _cors_origins.append(origin)
-
+# TEMPORARY: allow all origins while debugging the Vercel ↔ Render deployment.
+# TODO: restore to settings.CORS_ORIGINS once production is confirmed working.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
+    allow_origins=["*"],  # Allow all for production debugging
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -79,6 +73,7 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
 # ─── Root health check ────────────────────────────────────────────────────────
+@app.get("/health", tags=["health"], summary="Health check (Render)")
 @app.get("/api/v1/health", tags=["health"], summary="Health check")
 async def health_check() -> dict:
     """Returns service health status."""
