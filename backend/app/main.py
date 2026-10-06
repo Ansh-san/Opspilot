@@ -48,17 +48,11 @@ app = FastAPI(
 
 
 # ─── Middleware ───────────────────────────────────────────────────────────────
-# TEMPORARY: allow all origins while debugging the Vercel ↔ Render deployment.
-# TODO: restore to settings.CORS_ORIGINS once production is confirmed working.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all for production debugging
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(RequestIDMiddleware)
+# IMPORTANT: Starlette executes middleware in REVERSE order of registration —
+# the LAST middleware added is the OUTERMOST and sees the request first.
+# CORSMiddleware is therefore added LAST so it answers OPTIONS preflight
+# requests and attaches CORS headers before any other middleware can reject
+# or fail the request.
 setup_rate_limiter(app)
 
 if settings.ENVIRONMENT == "production":
@@ -66,6 +60,19 @@ if settings.ENVIRONMENT == "production":
         TrustedHostMiddleware,
         allowed_hosts=settings.ALLOWED_HOSTS,
     )
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestIDMiddleware)
+
+# TEMPORARY: allow all origins while debugging the Vercel ↔ Render deployment.
+# TODO: restore to settings.CORS_ORIGINS once production is confirmed working.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 # ─── Routers ─────────────────────────────────────────────────────────────────
@@ -100,7 +107,17 @@ async def global_exception_handler(request, exc: Exception) -> JSONResponse:
             "url": str(request.url),
         }
     )
+    # Unhandled-exception responses are produced by Starlette's outermost
+    # ServerErrorMiddleware, which sits OUTSIDE CORSMiddleware. Without these
+    # headers the browser hides the 500 and reports a network/CORS failure.
+    origin = request.headers.get("origin")
+    cors_headers = (
+        {"Access-Control-Allow-Origin": origin, "Access-Control-Allow-Credentials": "true", "Vary": "Origin"}
+        if origin
+        else {}
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error. Please try again later."},
+        headers=cors_headers,
     )

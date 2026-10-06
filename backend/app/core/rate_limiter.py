@@ -20,11 +20,16 @@ def get_user_or_ip(request: Request) -> str:
     return get_remote_address(request)
 
 
-# Redis-backed distributed rate limiter
+# Redis-backed distributed rate limiter.
+# If Redis is unreachable (e.g. no Redis service on the host), fall back to
+# in-memory limiting and swallow storage errors rather than failing requests
+# with a 500 — which the browser would surface as a CORS/network error.
 limiter = Limiter(
     key_func=get_user_or_ip,
     storage_uri=settings.REDIS_URL,
-    strategy="fixed-window"
+    strategy="fixed-window",
+    in_memory_fallback_enabled=True,
+    swallow_errors=True,
 )
 
 
