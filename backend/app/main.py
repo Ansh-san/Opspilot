@@ -99,14 +99,8 @@ async def health_check() -> dict:
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc: Exception) -> JSONResponse:
     from app.core.middleware import request_id_var
-    logger.exception(
-        "Unhandled exception", 
-        exc_info=exc,
-        extra={
-            "method": request.method,
-            "url": str(request.url),
-        }
-    )
+    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
+    
     # Unhandled-exception responses are produced by Starlette's outermost
     # ServerErrorMiddleware, which sits OUTSIDE CORSMiddleware. Without these
     # headers the browser hides the 500 and reports a network/CORS failure.
@@ -118,6 +112,17 @@ async def global_exception_handler(request, exc: Exception) -> JSONResponse:
     )
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error. Please try again later."},
+        content={
+            "detail": f"Server error: {str(exc)}",
+            "type": type(exc).__name__,
+        },
         headers=cors_headers,
     )
+
+@app.on_event("startup")
+async def startup():
+    from app.db.session import engine
+    from app.db.base import Base
+    # For production, use Alembic instead of create_all
+    # Base.metadata.create_all(bind=engine)  # Only for dev
+    logger.info("Application startup complete")
