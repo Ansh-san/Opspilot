@@ -120,9 +120,13 @@ async def global_exception_handler(request, exc: Exception) -> JSONResponse:
     )
 
 @app.on_event("startup")
-async def startup():
+async def startup_create_tables():
     from app.db.session import engine
     from app.db.base import Base
-    # For production, use Alembic instead of create_all
-    # Base.metadata.create_all(bind=engine)  # Only for dev
+    import app.db.models  # noqa: F401  (registers all models on Base.metadata)
+
+    print("🔥 Creating database tables if they don't exist...")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print("✅ Database tables verified/created.")
     logger.info("Application startup complete")
