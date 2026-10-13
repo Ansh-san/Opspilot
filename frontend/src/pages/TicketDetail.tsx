@@ -210,6 +210,30 @@ function AiInvestigationPanel({
   const [error, setError] = useState<string | null>(null)
   const [evaluations, setEvaluations] = useState<any[]>([])
   const { showToast } = useToast()
+  const navigate = useNavigate()
+  const [isRequesting, setIsRequesting] = useState(false)
+  const [requestedApprovalId, setRequestedApprovalId] = useState<string | null>(null)
+
+  const handleRequestApproval = useCallback(async () => {
+    if (!result?.recommendation) return
+    setIsRequesting(true)
+    try {
+      const { data } = await approvalsApi.createApproval({
+        ticket_id: ticket.id,
+        ai_run_id: result.ai_run_id,
+        recommended_action: result.recommendation.action,
+        risk_level: result.risk_level === 'high' ? 'high' : 'medium',
+        confidence: result.confidence,
+        evidence: result.diagnosis?.evidence ?? [],
+      })
+      setRequestedApprovalId(data.id)
+      showToast('Sent to Manager for Approval', 'success')
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    } finally {
+      setIsRequesting(false)
+    }
+  }, [result, ticket.id, showToast])
 
   const handleRun = useCallback(async () => {
     setIsRunning(true)
@@ -377,9 +401,9 @@ function AiInvestigationPanel({
           )}
 
           {/* Approval Section */}
-          {result.approval_id && (
+          {(result.approval_id || requestedApprovalId) && (
             <ApprovalSection 
-              approvalId={result.approval_id}
+              approvalId={(result.approval_id ?? requestedApprovalId) as string}
             />
           )}
 
@@ -472,6 +496,28 @@ function AiInvestigationPanel({
                 <div className="flex items-center justify-between pt-1 border-t border-slate-700/40 text-xs text-slate-500">
                   <span>⏱ {result.recommendation.estimated_resolution_time}</span>
                 </div>
+                {result.requires_approval && !result.approval_id && result.risk_level !== 'blocked' && (
+                  requestedApprovalId ? (
+                    <div className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25">
+                      <span className="text-xs font-semibold text-emerald-400">✓ Sent to Manager for Approval</span>
+                      <button
+                        onClick={() => navigate('/approvals')}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                      >
+                        View Approvals Queue →
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      id="request-approval-btn"
+                      onClick={handleRequestApproval}
+                      disabled={isRequesting}
+                      className="w-full py-2 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-400 text-xs font-semibold transition-all disabled:opacity-50"
+                    >
+                      {isRequesting ? 'Submitting…' : '🛡 Request Approval'}
+                    </button>
+                  )
+                )}
               </div>
             </div>
           )}
@@ -507,7 +553,7 @@ function AiInvestigationPanel({
 
           {/* Re-run */}
           <button
-            onClick={() => { setResult(null); setError(null) }}
+            onClick={() => { setResult(null); setError(null); setRequestedApprovalId(null) }}
             className="w-full py-2 rounded-lg border border-slate-700 hover:border-indigo-500/50 text-xs text-slate-500 hover:text-indigo-400 transition-all"
           >
             ↺ Re-run Investigation

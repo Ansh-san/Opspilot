@@ -6,10 +6,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db
 from app.db.models.user import User
-from app.schemas.approval import ApprovalActionRequest, ApprovalRequestResponse
+from app.schemas.approval import (
+    ApprovalActionRequest,
+    ApprovalCreateRequest,
+    ApprovalRequestResponse,
+)
 from app.services.approval_service import ApprovalService
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
+
+
+@router.post("", response_model=ApprovalRequestResponse, status_code=201)
+async def create_approval(
+    payload: ApprovalCreateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Submit an AI recommendation for human approval (creates a PENDING request)."""
+    service = ApprovalService(db)
+    return await service.create_approval_request(payload, current_user)
 
 
 @router.get("", response_model=list[ApprovalRequestResponse])

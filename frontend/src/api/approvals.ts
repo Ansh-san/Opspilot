@@ -22,7 +22,20 @@ export interface ApprovalRequestResponse {
   created_at: string
 }
 
+export interface CreateApprovalPayload {
+  ticket_id: string
+  ai_run_id: string | null
+  recommended_action: string
+  risk_level?: string
+  reason?: string
+  confidence?: number | null
+  evidence?: string[]
+}
+
 export const approvalsApi = {
+  createApproval: (payload: CreateApprovalPayload) =>
+    apiClient.post<ApprovalRequestResponse>('/api/v1/approvals', payload),
+
   listApprovals: (status?: string) =>
     apiClient.get<ApprovalRequestResponse[]>('/api/v1/approvals', { params: { status } }),
 

@@ -11,6 +11,7 @@ from app.ai.policy.engine import PolicyEngine
 from app.ai.policy.rules import PolicyDecision
 from app.ai.tools.registry import tool_registry
 from app.db.models.ai_run import AIRun
+from app.db.models.ai_run import RiskLevel
 from app.db.models.approval import ApprovalRequest, ApprovalStatus
 from app.db.models.audit_log import ActorType
 from app.db.models.ticket import Ticket
@@ -25,6 +26,68 @@ class ApprovalService:
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
         self._audit = AuditService(db)
+
+    async def create_approval_request(self, payload: Any, current_user: User) -> ApprovalRequest:
+        """Create a PENDING approval request from a human-submitted AI recommendation."""
+        ticket = await self._db.get(Ticket, payload.ticket_id)
+        if not ticket or ticket.org_id != current_user.org_id:
+            raise HTTPException(status_code=404, detail="Ticket not found.")
+
+        if payload.ai_run_id:
+            ai_run = await self._db.get(AIRun, payload.ai_run_id)
+            if not ai_run or ai_run.org_id != current_user.org_id:
+                raise HTTPException(status_code=404, detail="AI run not found.")
+
+        try:
+            risk = RiskLevel(payload.risk_level.lower())
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid risk_level.")
+        if risk == RiskLevel.BLOCKED:
+            raise HTTPException(status_code=422, detail="Blocked actions cannot be submitted for approval.")
+
+        # Avoid duplicate pending requests for the same run + action
+        if payload.ai_run_id:
+            dup = await self._db.execute(
+                select(ApprovalRequest).where(
+                    ApprovalRequest.org_id == current_user.org_id,
+                    ApprovalRequest.ai_run_id == payload.ai_run_id,
+                    ApprovalRequest.proposed_action == payload.recommended_action,
+                    ApprovalRequest.status == ApprovalStatus.PENDING,
+                )
+            )
+            existing = dup.scalars().first()
+            if existing:
+                return existing
+
+        approval = ApprovalRequest(
+            id=uuid.uuid4(),
+            org_id=current_user.org_id,
+            ticket_id=payload.ticket_id,
+            ai_run_id=payload.ai_run_id,
+            proposed_action=payload.recommended_action,
+            action_args={},
+            reason=payload.reason or f"AI recommended action requires human approval ({risk.value} risk).",
+            evidence=payload.evidence,
+            confidence=payload.confidence,
+            risk_level=risk,
+            status=ApprovalStatus.PENDING,
+            requested_by_id=current_user.id,
+        )
+        self._db.add(approval)
+        await self._db.flush()
+
+        await self._audit.log(
+            org_id=current_user.org_id,
+            event_type="approval.created",
+            resource_type="approval_request",
+            resource_id=approval.id,
+            actor_id=current_user.id,
+            actor_type=ActorType.USER,
+            details={"proposed_action": payload.recommended_action, "status": "pending", "manual": True},
+        )
+        await self._db.commit()
+        await self._db.refresh(approval)
+        return approval
 
     async def evaluate_and_route_proposal(
         self,
@@ -226,7 +289,15 @@ class ApprovalService:
         )
         
         try:
-            result = await tool_registry.execute_tool(approval.proposed_action, approval.action_args)
+            if tool is None:
+                # Free-text AI recommendation with no registered tool: record the
+                # human approval and acknowledge it as a simulated/manual action.
+                result = {
+                    "simulated": True,
+                    "message": "Recommendation approved by a human reviewer; no automated tool is registered, so it was recorded as a manual action.",
+                }
+            else:
+                result = await tool_registry.execute_tool(approval.proposed_action, approval.action_args)
             execution.success = True
             execution.result = result
             approval.status = ApprovalStatus.EXECUTED
